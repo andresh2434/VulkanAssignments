@@ -129,10 +129,12 @@ void VulkanRenderer::DestroyColourPickerResources()
 
 void VulkanRenderer::cmdCopyToBuffer()
 {
+
 }
 
 void VulkanRenderer::SubmitRender()
 {
+
 }
 
 PipelineInfo VulkanRenderer::CreateColourPickerPipeline(const char* vertFile, const char* fragFile, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass)
