@@ -76,23 +76,41 @@ void VulkanRenderer::cmdColourPickingRecording(Recording start_stop)
 
 void VulkanRenderer::cmdColourPickingPushConstant(const ModelMatrixPushConst& pushConst_)
 {
-
+    for (uint32_t i = 0; i < getNumSwapchains(); i++) {
+        vkCmdPushConstants(cpCommandBuffer.commandBuffers[i], cpPipelineInfo.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ModelMatrixPushConst), &pushConst_);
+    }
 }
 
 void VulkanRenderer::cmdColourPickingBindPipeline()
 {
+    for (uint32_t i = 0; i < getNumSwapchains(); i++) { // might just need the one
+        vkCmdBindPipeline(cpCommandBuffer.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, cpPipelineInfo.pipeline);
+    }
 }
 
-void VulkanRenderer::cmdColourPickingBindDescriptor()
+void VulkanRenderer::cmdColourPickingBindDescriptor() // only the first one
 {
+    for (uint32_t i = 0; i < numSwapchains; i++) {
+        vkCmdBindDescriptorSets(cpCommandBuffer.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+            cpPipelineInfo.pipelineLayout, 0, 1, &cpDescriptorSetInfo.descriptorSet[0], 0, nullptr);
+    }
 }
 
-void VulkanRenderer::cmdColourPickingBindMesh(IndexedVertexBuffer mesh_)
+void VulkanRenderer::cmdColourPickingBindMesh(IndexedVertexBuffer mesh)
 {
+    VkBuffer vertexBuffers[] = { mesh.vertBufferID };
+    VkDeviceSize offsets[] = { 0 };
+    for (uint32_t i = 0; i < getNumSwapchains(); i++) {
+        vkCmdBindVertexBuffers(cpCommandBuffer.commandBuffers[i], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cpCommandBuffer.commandBuffers[i], mesh.indexBufferID, 0, VK_INDEX_TYPE_UINT32);
+    }
 }
 
-void VulkanRenderer::cmdColourPickingDrawIndexed(IndexedVertexBuffer mesh_)
+void VulkanRenderer::cmdColourPickingDrawIndexed(IndexedVertexBuffer mesh)
 {
+    for (uint32_t i = 0; i < numSwapchains; i++) {
+        vkCmdDrawIndexed(cpCommandBuffer.commandBuffers[i], static_cast<uint32_t>(mesh.indexBufferLength), 1, 0, 0, 0);
+    }
 }
 
 uint32_t VulkanRenderer::ReadPixel(uint32_t x, uint32_t y)
@@ -102,6 +120,7 @@ uint32_t VulkanRenderer::ReadPixel(uint32_t x, uint32_t y)
 
 void VulkanRenderer::CreateColourPickerResources()
 {
+
 }
 
 void VulkanRenderer::DestroyColourPickerResources()
@@ -277,32 +296,221 @@ PipelineInfo VulkanRenderer::CreateColourPickerPipeline(const char* vertFile, co
 	return graphicsPipeInfo;
 }
 
-void VulkanRenderer::CreateColourPickerRenderPass(VkRenderPass renderPass_)
+void VulkanRenderer::CreateColourPickerRenderPass(VkRenderPass renderPass_) // cpRenderPass
 {
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = swapChainImageFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = findDepthFormat();
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments = attachments.data();
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass_) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create render pass!");
+    }
 }
 
 void VulkanRenderer::DestroyColourPickerRenderPass(VkRenderPass renderPass_)
 {
+    vkDestroyRenderPass(device, renderPass_, nullptr);
 }
 
 void VulkanRenderer::CreateColourPickerDepthImage(VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkImageView& depthImageView)
 {
+    uint32_t width = swapChainExtent.width;
+    uint32_t height = swapChainExtent.height;
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = width;
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = findDepthFormat();
+    //imageInfo.tiling = tiling;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //imageInfo.usage = usage;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(device, &imageInfo, nullptr, &depthImage) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create image!");
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(device, depthImage, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &depthImage) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate image memory!");
+    }
+    vkBindImageMemory(device, depthImage, depthImageMemory, 0);
+
+    //image view 
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = depthImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = findDepthFormat();
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VkImageView imageView;
+    if (vkCreateImageView(device, &viewInfo, nullptr, &depthImageView) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create texture image view!");
+    }
 }
 
 void VulkanRenderer::CreateColourPickerImage(VkImage& image, VkDeviceMemory& imageMemory, VkImageView& imageView)
 {
+    uint32_t width = swapChainExtent.width;
+    uint32_t height = swapChainExtent.height;
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = width;
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = swapChainImageFormat;
+    //imageInfo.tiling = tiling;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //imageInfo.usage = usage;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create image!");
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(device, image, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate image memory!");
+    }
+    vkBindImageMemory(device, image, imageMemory, 0);
+
+    // image view
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = swapChainImageFormat;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VkImageView imageView;
+    if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create texture image view!");
+    }
 }
 
 void VulkanRenderer::DestroyImage(VkImage& image, VkDeviceMemory& imageMemory, VkImageView& imageView)
 {
+    vkDestroyImage(device, imageView, nullptr);
+    vkDestroyImage(device, image, nullptr);
+    vkFreeMemory(device, imageMemory, nullptr);
 }
 
-void VulkanRenderer::CreateColourPickerFramebuffer(VkFramebuffer& framebuffer, VkImageView, VkImageView, VkRenderPass)
+void VulkanRenderer::CreateColourPickerFramebuffer(VkFramebuffer& framebuffer, VkImageView imageView, VkImageView depthImageView, VkRenderPass renderPass)
 {
+    // TODO: change frame buffer to cpFrameBuffer
+    swapChainFramebuffers.resize(numSwapchains);
+
+    for (size_t i = 0; i < numSwapchains; i++) {
+        std::array<VkImageView, 2> attachments = {
+            imageView,
+            depthImageView
+        };
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        framebufferInfo.pAttachments = attachments.data();
+        framebufferInfo.width = swapChainExtent.width;
+        framebufferInfo.height = swapChainExtent.height;
+        framebufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create framebuffer!");
+        }
+    }
 }
 
 void VulkanRenderer::DestroyFramebuffer(VkFramebuffer& framebuffer)
 {
+    vkDestroyFramebuffer(device, framebuffer, nullptr);
 }
 
 void VulkanRenderer::CreateColourPickerReadbackBuffer(BufferMemory& bufferMemory)
@@ -353,10 +561,10 @@ void VulkanRenderer::DestroyColourPickerCommandBuffer(CommandBufferData& command
     vkDestroyCommandPool(device, cpCommandBuffer.commandPool, nullptr);
 }
 
-void VulkanRenderer::CreateColourPickerFence(VkFence& fence_)
+void VulkanRenderer::CreateColourPickerFence(VkFence& fence)
 {
 }
 
-void VulkanRenderer::DestroyColourPickerFence(VkFence& fence_)
+void VulkanRenderer::DestroyColourPickerFence(VkFence& fence)
 {
 }
