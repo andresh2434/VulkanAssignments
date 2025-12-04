@@ -368,12 +368,12 @@ public:
 	void DestroyColourPickerResources();
 
 private:
-	void cmdCopyToBuffer();
-    void SubmitRender();
+    void cmdCopyToBuffer(uint32_t x, uint32_t y);
+    void SubmitToRenderer(uint32_t x, uint32_t y);
 
-	PipelineInfo CreateColourPickerPipeline(const char* vertFile, const char* fragFile, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass);
-	void CreateColourPickerRenderPass(VkRenderPass renderPass_);
-	void DestroyColourPickerRenderPass(VkRenderPass renderPass_);
+	PipelineInfo CreateColourPickerPipeline(const char* vertFile, const char* fragFile, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass_);
+	void CreateColourPickerRenderPass(VkRenderPass& renderPass_);
+	void DestroyColourPickerRenderPass(VkRenderPass& renderPass_);
 
 	void CreateColourPickerDepthImage(VkImage& depthImage, VkDeviceMemory& depthImageMemory, VkImageView& depthImageView);
 	void CreateColourPickerImage(VkImage& image, VkDeviceMemory& imageMemory, VkImageView& imageView);

@@ -191,7 +191,7 @@ PipelineInfo VulkanRenderer::CreateGraphicsPipeline(VkDescriptorSetLayout descri
 
     
     if (fragShaderModule) vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    if (fragShaderModule) vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    if (vertShaderModule) vkDestroyShaderModule(device, vertShaderModule, nullptr);
     if (tessCtrlModule) vkDestroyShaderModule(device, tessCtrlModule, nullptr);
     if (tessEvalModule) vkDestroyShaderModule(device, tessEvalModule, nullptr);
     if (geomModule) vkDestroyShaderModule(device, geomModule, nullptr);
