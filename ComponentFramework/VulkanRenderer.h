@@ -355,21 +355,23 @@ public:
 	void DestroyColourPickerPipeline();
 
     // commands (?)
-    void cmdColourPickingRecording(Recording start_stop);
+    void cmdColourPickingBeginRecording();
+	void cmdColourPickingEndRenderPass(int32_t x, int32_t y);
+	void cmdColourPickingEndRecording();
 	void cmdColourPickingPushConstant(const ModelMatrixPushConst& pushConst_);
     void cmdColourPickingBindPipeline();
 	void cmdColourPickingBindDescriptor();
 	void cmdColourPickingBindMesh(IndexedVertexBuffer mesh_);
 	void cmdColourPickingDrawIndexed(IndexedVertexBuffer mesh_);
 
-	uint32_t ReadPixel(uint32_t x, uint32_t y); // extract colourID
+	int32_t ReadPixel(int32_t x, int32_t y); // extract colourID
 
 	void CreateColourPickerResources();
 	void DestroyColourPickerResources();
 
 private:
-    void cmdCopyToBuffer(uint32_t x, uint32_t y);
-    void SubmitToRenderer(uint32_t x, uint32_t y);
+    void cmdCopyToBuffer(int32_t x, int32_t y);
+    void SubmitToRenderer();
 
 	PipelineInfo CreateColourPickerPipeline(const char* vertFile, const char* fragFile, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass renderPass_);
 	void CreateColourPickerRenderPass(VkRenderPass& renderPass_);

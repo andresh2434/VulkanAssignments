@@ -108,6 +108,9 @@ bool Scene2::OnCreate() {
 		actors.insert({ "Luigi", luigiActor });
 
 		pipelineInfo = vRenderer->CreateGraphicsPipeline(luigisdescriptorSetInfo.descriptorSetLayout, "shaders/multiPhong.vert.spv", "shaders/multiPhong.frag.spv");
+
+		vRenderer->CreateColourPickerResources();
+		vRenderer->CreateColourPickerPipeline("shaders/colourPicking.vert.spv", "shaders/colourPicking.frag.spv", camera->getUBO());
 	}
 	break;
 
@@ -121,7 +124,7 @@ bool Scene2::OnCreate() {
 void Scene2::HandleEvents(const SDL_Event& sdlEvent) {
 
 	switch (sdlEvent.type) {
-	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
 		printf("size changed %d %d\n", sdlEvent.window.data1, sdlEvent.window.data2);
 		float aspectRatio = static_cast<float>(sdlEvent.window.data1) / static_cast<float>(sdlEvent.window.data2);
 		///camera->Perspective(45.0f, aspectRatio, 0.5f, 20.0f);
@@ -136,7 +139,29 @@ void Scene2::HandleEvents(const SDL_Event& sdlEvent) {
 		}
 		break;
 	}
+	case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+		//colour picker handling
+		VulkanRenderer* vRenderer;
+		vRenderer = dynamic_cast<VulkanRenderer*>(renderer);
+		int32_t x, y;
+		x = sdlEvent.button.x;
+		y = sdlEvent.button.y;
 
+		vRenderer->cmdColourPickingBeginRecording();
+		vRenderer->cmdColourPickingBindPipeline();
+		vRenderer->cmdColourPickingBindDescriptor();
+		vRenderer->cmdColourPickingBindMesh(mariosMesh);
+
+		for (auto a : actors) {
+			vRenderer->cmdColourPickingPushConstant(a.second->GetModelMatrixPushConst());
+			vRenderer->cmdColourPickingDrawIndexed(mariosMesh);
+		}
+		vRenderer->cmdColourPickingEndRenderPass(x, y); // pass in the screen coords (also stop recording)
+		int32_t colourID = vRenderer->ReadPixel(x, y); // extract colourID
+		std::cout << "ColourID: " << colourID << std::endl << "X: " << x << "Y: " << y << std::endl;
+		break;
+	}
+	}
 }
 void Scene2::Update(const float deltaTime) {
 	static float elapsedTime = 0.0f;
@@ -158,20 +183,20 @@ void Scene2::Render() const {
 		vRenderer->RecordCommandBuffers(Recording::START);
 
 		vRenderer->BindMesh(mariosMesh);
-		//vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Mario")->second->GetDescriptorSetInfo()->descriptorSet);
-		//vRenderer->BindPipeline(pipelineInfo.pipeline);
-		//vRenderer->SetPushConstant(pipelineInfo, actors.find("Mario")->second->GetComponent<TransformComponent>()->GetTransformMatrix()); // draw mario twices
-		//vRenderer->DrawIndexed(mariosMesh);
-		//vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Luigi")->second->GetDescriptorSetInfo()->descriptorSet);
-		//vRenderer->SetPushConstant(pipelineInfo, actors.find("Luigi")->second->GetComponent<TransformComponent>()->GetTransformMatrix());
-		//vRenderer->DrawIndexed(mariosMesh);
+		vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Mario")->second->GetDescriptorSetInfo()->descriptorSet);
+		vRenderer->BindPipeline(pipelineInfo.pipeline);
+		vRenderer->SetPushConstant(pipelineInfo, actors.find("Mario")->second->GetComponent<TransformComponent>()->GetTransformMatrix()); // draw mario twices
+		vRenderer->DrawIndexed(mariosMesh);
+		vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Luigi")->second->GetDescriptorSetInfo()->descriptorSet);
+		vRenderer->SetPushConstant(pipelineInfo, actors.find("Luigi")->second->GetComponent<TransformComponent>()->GetTransformMatrix());
+		vRenderer->DrawIndexed(mariosMesh);
 
-		vRenderer->BindDescriptorSet(colourPickPipelineInfo.pipelineLayout, colourPickDescriptorSetInfo.descriptorSet);
-		vRenderer->BindPipeline(colourPickPipelineInfo.pipeline);
-		vRenderer->SetPushConstant(colourPickPipelineInfo, actors.find("Mario")->second->GetModelMatrixPushConst());
-		vRenderer->DrawIndexed(mariosMesh);
-		vRenderer->SetPushConstant(colourPickPipelineInfo, actors.find("Luigi")->second->GetModelMatrixPushConst());
-		vRenderer->DrawIndexed(mariosMesh);
+		//vRenderer->BindDescriptorSet(colourPickPipelineInfo.pipelineLayout, colourPickDescriptorSetInfo.descriptorSet);
+		//vRenderer->BindPipeline(colourPickPipelineInfo.pipeline);
+		//vRenderer->SetPushConstant(colourPickPipelineInfo, actors.find("Mario")->second->GetModelMatrixPushConst());
+		//vRenderer->DrawIndexed(mariosMesh);
+		//vRenderer->SetPushConstant(colourPickPipelineInfo, actors.find("Luigi")->second->GetModelMatrixPushConst());
+		//vRenderer->DrawIndexed(mariosMesh);
 
 
 		vRenderer->RecordCommandBuffers(Recording::STOP);
@@ -213,7 +238,8 @@ void Scene2::OnDestroy() {
 		vRenderer->DestroySampler2D(luigisPants);
 		vRenderer->DestroyIndexedMesh(mariosMesh);
 
-
+		vRenderer->DestroyColourPickerPipeline();
+		vRenderer->DestroyColourPickerResources();
 	}
 
 

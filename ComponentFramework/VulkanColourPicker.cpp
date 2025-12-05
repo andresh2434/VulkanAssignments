@@ -36,43 +36,54 @@ void VulkanRenderer::DestroyColourPickerPipeline()
     vkDestroyPipeline(device, cpPipelineInfo.pipeline, nullptr);
 }
 
-void VulkanRenderer::cmdColourPickingRecording(Recording start_stop)
+void VulkanRenderer::cmdColourPickingBeginRecording()
 {
-    if (start_stop == Recording::START) {
-        vkDeviceWaitIdle(device); /// This is bad
-        for (size_t i = 0; i < cpCommandBuffer.commandBuffers.size(); i++) {
-            VkCommandBufferBeginInfo beginInfo{};
-            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    //if (start_stop == Recording::START) {
+    vkWaitForFences(device, 1, &offscreencpFence, VK_TRUE, UINT64_MAX); /// This is GOOD :D
+	vkResetFences(device, 1, &offscreencpFence);
+      
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-            if (vkBeginCommandBuffer(cpCommandBuffer.commandBuffers[i], &beginInfo) != VK_SUCCESS) {
-                throw std::runtime_error("failed to begin recording command buffer!");
-            }
-
-            VkRenderPassBeginInfo renderPassInfo{};
-            renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            renderPassInfo.renderPass = cpRenderPass;
-            renderPassInfo.framebuffer = cpFramebuffer;
-            renderPassInfo.renderArea.offset = { 0, 0 };
-            renderPassInfo.renderArea.extent = swapChainExtent;
-
-            std::array<VkClearValue, 2> clearValues{};
-            clearValues[0].color = { 0.5f, 0.2f, 0.3f, 1.0f }; // background colour
-            clearValues[1].depthStencil = { 1.0f, 0 };
-
-            renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-            renderPassInfo.pClearValues = clearValues.data();
-            vkCmdBeginRenderPass(cpCommandBuffer.commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        if (vkBeginCommandBuffer(cpCommandBuffer.commandBuffers[0], &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
         }
-    }
-    else if (start_stop == Recording::STOP) {
-        for (size_t i = 0; i < cpCommandBuffer.commandBuffers.size(); i++) {
-            vkCmdEndRenderPass(cpCommandBuffer.commandBuffers[i]);
-            if (vkEndCommandBuffer(cpCommandBuffer.commandBuffers[i]) != VK_SUCCESS) {
-                throw std::runtime_error("failed to record command buffer!");
-            }
-        }
-    }
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = cpRenderPass;
+        renderPassInfo.framebuffer = cpFramebuffer;
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = swapChainExtent;
+
+        std::array<VkClearValue, 2> clearValues{};
+        clearValues[0].color = { 1.0f,1.0f,1.0f,1.0f }; // background colour
+        clearValues[1].depthStencil = { 1.0f, 0 };
+
+        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+        vkCmdBeginRenderPass(cpCommandBuffer.commandBuffers[0], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+     //   }
+        
+    
 }
+
+void VulkanRenderer::cmdColourPickingEndRenderPass(int32_t x, int32_t y)
+{
+    vkCmdEndRenderPass(cpCommandBuffer.commandBuffers[0]);
+    cmdCopyToBuffer(x, y);
+	cmdColourPickingEndRecording();
+}
+
+void VulkanRenderer::cmdColourPickingEndRecording()
+{
+    if (vkEndCommandBuffer(cpCommandBuffer.commandBuffers[0]) != VK_SUCCESS) {
+        throw std::runtime_error("failed to record command buffer!");
+    }
+    SubmitToRenderer();
+}
+
+
 
 void VulkanRenderer::cmdColourPickingPushConstant(const ModelMatrixPushConst& pushConst_)
 {
@@ -100,22 +111,23 @@ void VulkanRenderer::cmdColourPickingBindMesh(IndexedVertexBuffer mesh_)
 {
     VkBuffer vertexBuffers[] = { mesh_.vertBufferID };
     VkDeviceSize offsets[] = { 0 };
-    for (uint32_t i = 0; i < getNumSwapchains(); i++) {
-        vkCmdBindVertexBuffers(cpCommandBuffer.commandBuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(cpCommandBuffer.commandBuffers[i], mesh_.indexBufferID, 0, VK_INDEX_TYPE_UINT32);
-    }
+    
+    vkCmdBindVertexBuffers(cpCommandBuffer.commandBuffers[0], 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(cpCommandBuffer.commandBuffers[0], mesh_.indexBufferID, 0, VK_INDEX_TYPE_UINT32);
+    
 }
 
 void VulkanRenderer::cmdColourPickingDrawIndexed(IndexedVertexBuffer mesh_)
 {
-    for (uint32_t i = 0; i < numSwapchains; i++) {
-        vkCmdDrawIndexed(cpCommandBuffer.commandBuffers[i], static_cast<uint32_t>(mesh_.indexBufferLength), 1, 0, 0, 0);
-    }
+   
+    vkCmdDrawIndexed(cpCommandBuffer.commandBuffers[0], static_cast<uint32_t>(mesh_.indexBufferLength), 1, 0, 0, 0);
+    
 }
 
-uint32_t VulkanRenderer::ReadPixel(uint32_t x, uint32_t y)
+int32_t VulkanRenderer::ReadPixel(int32_t x, int32_t y)
 {
-    SubmitToRenderer(x, y);
+
+	vkWaitForFences(device, 1, &offscreencpFence, VK_TRUE, UINT64_MAX);
 
     uint32_t pixel = 0;
     void* dataPtr = nullptr;
@@ -123,15 +135,14 @@ uint32_t VulkanRenderer::ReadPixel(uint32_t x, uint32_t y)
     vkMapMemory(device, cpBufferMemory.bufferMemoryID, 0, 4, 0, &dataPtr);
 
     uint8_t* px = reinterpret_cast<uint8_t*>(dataPtr);
-    uint8_t r, g, b, a;
+    uint8_t r, g, b;
     r = px[0];
     g = px[1];
     b = px[2];
-    a = px[3]; // not necessary (?)
 
     vkUnmapMemory(device, cpBufferMemory.bufferMemoryID);
 
-    pixel = (r << 24) | (g << 16) | (b << 8) | a;
+    pixel = (r << 0) | (g << 8) | (b << 16);
 
     return pixel;
 }
@@ -146,6 +157,7 @@ void VulkanRenderer::CreateColourPickerResources()
     // fence
     // readback
     
+
     CreateColourPickerRenderPass(cpRenderPass);
 
     CreateColourPickerImage(cpImage, cpImageMemory, cpImageView);
@@ -153,8 +165,8 @@ void VulkanRenderer::CreateColourPickerResources()
 
     CreateColourPickerFramebuffer(cpFramebuffer, cpImageView, cpDepthImageView, cpRenderPass);
 
-    CreateColourPickerCommandBuffer(cpCommandBuffer);
     CreateColourPickerCommandPool(cpCommandBuffer.commandPool);
+    CreateColourPickerCommandBuffer(cpCommandBuffer);
 
     CreateColourPickerFence(offscreencpFence);
 
@@ -172,13 +184,30 @@ void VulkanRenderer::DestroyColourPickerResources()
     
 }
 
-void VulkanRenderer::cmdCopyToBuffer(uint32_t x, uint32_t y)
+void VulkanRenderer::cmdCopyToBuffer(int32_t x, int32_t y)
 {
+	VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+	region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // getting colour
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = { x,y, 0 }; // screen coords
+    region.imageExtent = { 1,1,1 }; // tiny box
 
+    vkCmdCopyImageToBuffer(cpCommandBuffer.commandBuffers[0], cpImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        cpBufferMemory.bufferID, 1, &region);
 }
 
-void VulkanRenderer::SubmitToRenderer(uint32_t x, uint32_t y)
+void VulkanRenderer::SubmitToRenderer()
 {
+	VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cpCommandBuffer.commandBuffers[0];
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, offscreencpFence);
 
 }
 
@@ -347,7 +376,7 @@ PipelineInfo VulkanRenderer::CreateColourPickerPipeline(const char* vertFile, co
 void VulkanRenderer::CreateColourPickerRenderPass(VkRenderPass& renderPass_) // cpRenderPass
 {
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapChainImageFormat;
+    colorAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -355,7 +384,7 @@ void VulkanRenderer::CreateColourPickerRenderPass(VkRenderPass& renderPass_) // 
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     //colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = findDepthFormat();
@@ -479,7 +508,7 @@ void VulkanRenderer::CreateColourPickerImage(VkImage& image_, VkDeviceMemory& im
     imageInfo.extent.depth = 1;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
-    imageInfo.format = swapChainImageFormat;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     //imageInfo.tiling = tiling;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -511,7 +540,7 @@ void VulkanRenderer::CreateColourPickerImage(VkImage& image_, VkDeviceMemory& im
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image_;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = swapChainImageFormat;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
@@ -536,25 +565,24 @@ void VulkanRenderer::CreateColourPickerFramebuffer(VkFramebuffer& framebuffer_, 
     // TODO: change frame buffer to cpFrameBuffer
     //swapChainFramebuffers.resize(numSwapchains);
 
-    for (size_t i = 0; i < numSwapchains; i++) {
-        std::array<VkImageView, 2> attachments = {
-            imageView_,
-            depthImageView
-        };
+    std::array<VkImageView, 2> attachments = {
+        imageView_,
+        depthImageView_
+    };
 
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass_;
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = swapChainExtent.width;
-        framebufferInfo.height = swapChainExtent.height;
-        framebufferInfo.layers = 1;
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = renderPass_;
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    framebufferInfo.pAttachments = attachments.data();
+    framebufferInfo.width = swapChainExtent.width;
+    framebufferInfo.height = swapChainExtent.height;
+    framebufferInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer_) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer_) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create framebuffer!");
     }
+
 }
 
 void VulkanRenderer::DestroyFramebuffer(VkFramebuffer& framebuffer_)
@@ -564,6 +592,8 @@ void VulkanRenderer::DestroyFramebuffer(VkFramebuffer& framebuffer_)
 
 void VulkanRenderer::CreateColourPickerReadbackBuffer(BufferMemory& bufferMemory_)
 {
+    bufferMemory_.bufferMemoryLength = 4; // 4 bytes for 1 pixel // 32 bits
+
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = bufferMemory_.bufferMemoryLength;
