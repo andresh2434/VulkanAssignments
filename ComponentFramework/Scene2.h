@@ -57,6 +57,10 @@ public:
 	virtual void Update(const float deltaTime) override;
 	virtual void Render() const override;
 	virtual void HandleEvents(const SDL_Event& sdlEvent) override;
+
+	std::vector<Plane> CreateFrustrum() const; // only one camera
+	void CheckFrustrum();
+
 };
 
 

@@ -163,6 +163,7 @@ void Scene2::HandleEvents(const SDL_Event& sdlEvent) {
 	}
 	}
 }
+
 void Scene2::Update(const float deltaTime) {
 	static float elapsedTime = 0.0f;
 	elapsedTime += deltaTime;
@@ -171,6 +172,20 @@ void Scene2::Update(const float deltaTime) {
 	actors.find("Luigi")->second->GetComponent<TransformComponent>()->ApplyRotation(-1.0f, Vec3(1.0f, 1.0f, 0.0f));
 	//luigisModelMatrix = MMath::translate(2.0, 0.0f, 0.0f) * MMath::rotate(elapsedTime * 90.0f, Vec3(1.0f, 0.0f, 0.0f));
 }
+
+std::vector<Plane> Scene2::CreateFrustrum() const
+{
+	std::vector<Plane> frustrum;
+	Matrix4 clip = camera->getProjectionMatrix() * camera->getViewMatrix();
+	Plane left, right, top, bottom, near, far;
+
+	return std::vector<Plane>();
+}
+
+void Scene2::CheckFrustrum()
+{
+}
+
 
 void Scene2::Render() const {
 	switch (renderer->getRendererType()) {
@@ -182,14 +197,14 @@ void Scene2::Render() const {
 
 		vRenderer->RecordCommandBuffers(Recording::START);
 
-		vRenderer->BindMesh(mariosMesh);
-		vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Mario")->second->GetDescriptorSetInfo()->descriptorSet);
-		vRenderer->BindPipeline(pipelineInfo.pipeline);
-		vRenderer->SetPushConstant(pipelineInfo, actors.find("Mario")->second->GetComponent<TransformComponent>()->GetTransformMatrix()); // draw mario twices
-		vRenderer->DrawIndexed(mariosMesh);
-		vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Luigi")->second->GetDescriptorSetInfo()->descriptorSet);
-		vRenderer->SetPushConstant(pipelineInfo, actors.find("Luigi")->second->GetComponent<TransformComponent>()->GetTransformMatrix());
-		vRenderer->DrawIndexed(mariosMesh);
+		//vRenderer->BindMesh(mariosMesh);
+		//vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Mario")->second->GetDescriptorSetInfo()->descriptorSet);
+		//vRenderer->BindPipeline(pipelineInfo.pipeline);
+		//vRenderer->SetPushConstant(pipelineInfo, actors.find("Mario")->second->GetComponent<TransformComponent>()->GetTransformMatrix()); // draw mario twices
+		//vRenderer->DrawIndexed(mariosMesh);
+		//vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actors.find("Luigi")->second->GetDescriptorSetInfo()->descriptorSet);
+		//vRenderer->SetPushConstant(pipelineInfo, actors.find("Luigi")->second->GetComponent<TransformComponent>()->GetTransformMatrix());
+		//vRenderer->DrawIndexed(mariosMesh);
 
 		//vRenderer->BindDescriptorSet(colourPickPipelineInfo.pipelineLayout, colourPickDescriptorSetInfo.descriptorSet);
 		//vRenderer->BindPipeline(colourPickPipelineInfo.pipeline);
@@ -197,7 +212,15 @@ void Scene2::Render() const {
 		//vRenderer->DrawIndexed(mariosMesh);
 		//vRenderer->SetPushConstant(colourPickPipelineInfo, actors.find("Luigi")->second->GetModelMatrixPushConst());
 		//vRenderer->DrawIndexed(mariosMesh);
+		vRenderer->BindPipeline(pipelineInfo.pipeline);
 
+		for (const auto& a : actors) {
+			auto actor = a.second;
+			if (actor->culled) { continue; }
+			vRenderer->BindDescriptorSet(pipelineInfo.pipelineLayout, actor->GetDescriptorSetInfo()->descriptorSet);
+			vRenderer->SetPushConstant(pipelineInfo, actor->GetComponent<TransformComponent>()->GetTransformMatrix());
+			vRenderer->DrawIndexed(mariosMesh); // hard coded because only two things in scene and both use same model
+		}
 
 		vRenderer->RecordCommandBuffers(Recording::STOP);
 		vRenderer->Render();
