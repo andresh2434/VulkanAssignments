@@ -58,7 +58,8 @@ public:
 	std::vector<BufferMemory> getUBO() { return cameraUBO; }
 	Matrix4 getProjectionMatrix() { return projectionMatrix; }
 
-    Matrix4 getViewMatrix() { return MMath::inverse(MMath::toMatrix4(orientationPosition)); }
+    Matrix4 getViewMatrix() { return MMath::toMatrix4(DQMath::inverse(orientationPosition)); }
+
     //cameraUBO = vRenderer->CreateUniformBuffers<Camera>();
 
 };

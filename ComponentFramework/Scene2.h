@@ -17,6 +17,22 @@ using namespace MATH;
 /// Forward declarations 
 union SDL_Event;
 
+struct Frustrum {
+	Plane left;
+	Plane right;
+	Plane top;
+	Plane bottom;
+	Plane near;
+	Plane far;
+
+	Plane* begin() { return &left; }
+	Plane* end() { return (&far) + 1; }
+
+	const Plane* begin() const { return &left; }
+	const Plane* end()   const { return (&far) + 1; }
+
+};
+
 
 class Scene2 : public Scene {
 private:
@@ -58,8 +74,14 @@ public:
 	virtual void Render() const override;
 	virtual void HandleEvents(const SDL_Event& sdlEvent) override;
 
-	std::vector<Plane> CreateFrustrum() const; // only one camera
+	// mine
+	Frustrum CreateFrustrum() const; // only one camera
 	void CheckFrustrum();
+
+
+	// kevins
+	std::vector<Plane> GenerateFusturmPlane(Matrix4& model);
+	void FusturmCheck();
 
 };
 
